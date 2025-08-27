@@ -4,9 +4,30 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 import os
+import requests
+
+# Model configuration
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1_4lscae-63ZzMZG1PZOOChaL6Qg2TkCO"
+MODEL_PATH = "best.pt"
+
+# Download model if it doesn't exist
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model file from Google Drive...")
+    try:
+        response = requests.get(MODEL_URL)
+        response.raise_for_status()  # Check for HTTP errors
+        
+        with open(MODEL_PATH, "wb") as f:
+            f.write(response.content)
+        print("Model downloaded successfully!")
+    except Exception as e:
+        print(f"Error downloading model: {e}")
+        # You might want to exit or handle this differently
+        raise
 
 # Load your trained model
-model = YOLO("best.pt")  # Make sure the path is correct
+model = YOLO(MODEL_PATH)
+print("Model loaded successfully!")
 
 app = FastAPI()
 
