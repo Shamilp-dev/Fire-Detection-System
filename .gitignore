@@ -1,0 +1,7 @@
+backend/best.pt
+.DS_Store
+node_modules/
+build/
+__pycache__/
+*.pyc
+.env
