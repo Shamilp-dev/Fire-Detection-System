@@ -5,73 +5,64 @@ import cv2
 import numpy as np
 import os
 import requests
-import torch
 
-# Model configuration
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1_4lscae-63ZzMZG1PZOOChaL6Qg2TkCO"
+# Model configuration - UPDATED URL
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1_4lscae-63ZzMZG1PZOOChaL6Qg2TkCO&confirm=t"
 MODEL_PATH = "best.pt"
 
 # Download model if it doesn't exist
 if not os.path.exists(MODEL_PATH):
     print("Downloading model file from Google Drive...")
     try:
-        response = requests.get(MODEL_URL)
-        response.raise_for_status()  # Check for HTTP errors
+        # Use a session to handle cookies
+        session = requests.Session()
+        response = session.get(MODEL_URL, stream=True)
+        response.raise_for_status()
         
+        # Check if we got the actual file (not HTML)
+        content_type = response.headers.get('content-type', '')
+        if 'text/html' in content_type:
+            raise Exception("Got HTML instead of model file - check Google Drive sharing settings")
+        
+        # Save the file
         with open(MODEL_PATH, "wb") as f:
-            f.write(response.content)
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
         print("Model downloaded successfully!")
+        print(f"File size: {os.path.getsize(MODEL_PATH)} bytes")
+        
     except Exception as e:
         print(f"Error downloading model: {e}")
+        # Remove corrupted file if it exists
+        if os.path.exists(MODEL_PATH):
+            os.remove(MODEL_PATH)
         raise
 
-# Fix for PyTorch weights_only error
-def safe_torch_load(path):
-    """Load PyTorch model safely with weights_only=False for compatibility"""
-    try:
-        # First try with weights_only=True (secure)
-        return torch.load(path, map_location='cpu', weights_only=True)
-    except:
-        # Fallback to weights_only=False for older models
-        print("Falling back to weights_only=False for compatibility")
-        return torch.load(path, map_location='cpu', weights_only=False)
-
-# Load your trained model with compatibility fix
-print("Loading model with compatibility fix...")
+# Load your trained model
+print("Loading model...")
 try:
-    # Patch the ultralytics loading function
-    from ultralytics.nn.tasks import torch_safe_load
-    
-    # Replace the default loader with our safe loader
-    original_torch_safe_load = torch_safe_load
-    def patched_torch_safe_load(weight):
-        try:
-            return original_torch_safe_load(weight)
-        except:
-            # Fallback to our safe loader
-            return safe_torch_load(weight), weight
-    
-    # Apply the patch
-    import ultralytics.nn.tasks
-    ultralytics.nn.tasks.torch_safe_load = patched_torch_safe_load
-    
-    # Now load the model
+    # Use ultralytics native loading which handles PyTorch compatibility
     model = YOLO(MODEL_PATH)
-    print("Model loaded successfully with compatibility fix!")
+    print("Model loaded successfully!")
     
 except Exception as e:
     print(f"Error loading model: {e}")
+    # Check if file is valid
+    if os.path.exists(MODEL_PATH):
+        file_size = os.path.getsize(MODEL_PATH)
+        print(f"Model file size: {file_size} bytes")
+        if file_size < 1000000:  # Less than 1MB probably isn't a model
+            print("File seems too small - may be corrupted or wrong file")
     raise
 
 app = FastAPI()
 
-# CORS for both development and production
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Development
-        "https://your-app-name.netlify.app"  # Production - UPDATE THIS AFTER DEPLOYMENT
-    ],
+    allow_origins=["http://localhost:3000", "https://your-app-name.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,7 +79,6 @@ async def get_favicon():
 @app.post("/detect/")
 async def detect_fire(file: UploadFile = File(...)):
     try:
-        # Read the uploaded image file
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -96,11 +86,9 @@ async def detect_fire(file: UploadFile = File(...)):
         if img is None:
             return {"error": "Invalid image file"}, 400
 
-        # Run YOLO detection
         results = model(img)
         result = results[0]
 
-        # Parse the results
         detections = []
         for box in result.boxes:
             x1, y1, x2, y2 = box.xyxy[0].tolist()
