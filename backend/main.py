@@ -6,10 +6,22 @@ import numpy as np
 import os
 import requests
 import torch
-from ultralytics.nn.tasks import DetectionModel  # Import needed for safe globals
+from ultralytics.nn.tasks import DetectionModel
+from torch.nn.modules.container import Sequential  # Add this import
 
-# Add safe globals for PyTorch 2.6 compatibility
-torch.serialization.add_safe_globals([DetectionModel])
+# Add ALL required safe globals for PyTorch 2.6 compatibility
+torch.serialization.add_safe_globals([
+    DetectionModel,
+    Sequential,
+    # Add any other classes that might be needed
+    torch.nn.Module,
+    torch.nn.Conv2d,
+    torch.nn.BatchNorm2d,
+    torch.nn.LeakyReLU,
+    torch.nn.Upsample,
+    torch.nn.MaxPool2d,
+    torch.nn.SiLU,
+])
 
 # Use GitHub Releases URL
 MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
