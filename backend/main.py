@@ -6,23 +6,16 @@ import numpy as np
 import os
 import requests
 
-# Model configuration - UPDATED URL
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1_4lscae-63ZzMZG1PZOOChaL6Qg2TkCO&confirm=t"
+# Use GitHub Releases URL - UPDATE WITH YOUR ACTUAL URL
+MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
 MODEL_PATH = "best.pt"
 
 # Download model if it doesn't exist
 if not os.path.exists(MODEL_PATH):
-    print("Downloading model file from Google Drive...")
+    print("Downloading model file from GitHub Releases...")
     try:
-        # Use a session to handle cookies
-        session = requests.Session()
-        response = session.get(MODEL_URL, stream=True)
+        response = requests.get(MODEL_URL, stream=True)
         response.raise_for_status()
-        
-        # Check if we got the actual file (not HTML)
-        content_type = response.headers.get('content-type', '')
-        if 'text/html' in content_type:
-            raise Exception("Got HTML instead of model file - check Google Drive sharing settings")
         
         # Save the file
         with open(MODEL_PATH, "wb") as f:
@@ -30,12 +23,11 @@ if not os.path.exists(MODEL_PATH):
                 if chunk:
                     f.write(chunk)
         
-        print("Model downloaded successfully!")
+        print("Model downloaded successfully from GitHub!")
         print(f"File size: {os.path.getsize(MODEL_PATH)} bytes")
         
     except Exception as e:
         print(f"Error downloading model: {e}")
-        # Remove corrupted file if it exists
         if os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
         raise
@@ -43,18 +35,14 @@ if not os.path.exists(MODEL_PATH):
 # Load your trained model
 print("Loading model...")
 try:
-    # Use ultralytics native loading which handles PyTorch compatibility
     model = YOLO(MODEL_PATH)
     print("Model loaded successfully!")
     
 except Exception as e:
     print(f"Error loading model: {e}")
-    # Check if file is valid
     if os.path.exists(MODEL_PATH):
         file_size = os.path.getsize(MODEL_PATH)
         print(f"Model file size: {file_size} bytes")
-        if file_size < 1000000:  # Less than 1MB probably isn't a model
-            print("File seems too small - may be corrupted or wrong file")
     raise
 
 app = FastAPI()
