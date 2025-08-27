@@ -5,8 +5,13 @@ import cv2
 import numpy as np
 import os
 import requests
+import torch
+from ultralytics.nn.tasks import DetectionModel  # Import needed for safe globals
 
-# Use GitHub Releases URL - UPDATE WITH YOUR ACTUAL URL
+# Add safe globals for PyTorch 2.6 compatibility
+torch.serialization.add_safe_globals([DetectionModel])
+
+# Use GitHub Releases URL
 MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
 MODEL_PATH = "best.pt"
 
