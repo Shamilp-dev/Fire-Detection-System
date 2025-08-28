@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import os
 import requests
+import torch
 
 # Use GitHub Releases URL
 MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
@@ -17,7 +18,6 @@ if not os.path.exists(MODEL_PATH):
         response = requests.get(MODEL_URL, stream=True)
         response.raise_for_status()
         
-        # Save the file
         with open(MODEL_PATH, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
@@ -32,47 +32,34 @@ if not os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
         raise
 
-# Load your trained model with ultralytics native method
+# Load your trained model - SIMPLIFIED approach
 print("Loading model...")
 try:
-    # Use ultralytics native loading which handles compatibility internally
-    from ultralytics.engine.model import attempt_load_one_weight
-    
-    # Load the model using ultralytics internal method
-    model, ckpt = attempt_load_one_weight(MODEL_PATH)
-    print("Model loaded successfully using ultralytics internal method!")
+    # Use the standard YOLO loader but ensure compatibility
+    model = YOLO(MODEL_PATH)
+    print("Model loaded successfully!")
     
 except Exception as e:
     print(f"Error loading model: {e}")
-    # Fallback to direct YOLO loading with weights_only=False
-    try:
-        print("Trying fallback loading method...")
-        import torch
-        # Temporarily patch torch.load to use weights_only=False
-        original_load = torch.load
-        def patched_load(*args, **kwargs):
-            kwargs['weights_only'] = False
-            return original_load(*args, **kwargs)
-        
-        torch.load = patched_load
-        
-        # Now try loading
-        model = YOLO(MODEL_PATH)
-        print("Model loaded successfully with fallback method!")
-        
-    except Exception as fallback_error:
-        print(f"Fallback also failed: {fallback_error}")
-        if os.path.exists(MODEL_PATH):
-            file_size = os.path.getsize(MODEL_PATH)
-            print(f"Model file size: {file_size} bytes")
-        raise
+    if os.path.exists(MODEL_PATH):
+        file_size = os.path.getsize(MODEL_PATH)
+        print(f"Model file size: {file_size} bytes")
+    # Don't raise here, let the app start but without model functionality
+    model = None
 
 app = FastAPI()
 
-# CORS configuration
+# CORS configuration - UPDATE WITH YOUR ACTUAL URLS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","http://localhost:3001","https://your-app-name.netlify.app"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001", 
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "https://fire-detection-system-backend.onrender.com",
+        "https://your-app-name.netlify.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,6 +76,9 @@ async def get_favicon():
 @app.post("/detect/")
 async def detect_fire(file: UploadFile = File(...)):
     try:
+        if model is None:
+            return {"error": "Model not loaded properly"}, 500
+            
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
