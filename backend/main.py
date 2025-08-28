@@ -1,82 +1,45 @@
 from fastapi import FastAPI, File, UploadFile, Response
 from fastapi.middleware.cors import CORSMiddleware
-from ultralytics import YOLO
 import cv2
 import numpy as np
 import os
 import requests
 
-# Use GitHub Releases URL
-MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
+# Global variable for model
+model = None
 MODEL_PATH = "best.pt"
-
-# Download model if it doesn't exist
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model file from GitHub Releases...")
-    try:
-        response = requests.get(MODEL_URL, stream=True)
-        response.raise_for_status()
-        
-        # Save the file
-        with open(MODEL_PATH, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        print("Model downloaded successfully from GitHub!")
-        print(f"File size: {os.path.getsize(MODEL_PATH)} bytes")
-        
-    except Exception as e:
-        print(f"Error downloading model: {e}")
-        if os.path.exists(MODEL_PATH):
-            os.remove(MODEL_PATH)
-        raise
-
-# Load your trained model with ultralytics native method
-print("Loading model...")
-try:
-    # Use ultralytics native loading which handles compatibility internally
-    from ultralytics.engine.model import attempt_load_one_weight
-    
-    # Load the model using ultralytics internal method
-    model, ckpt = attempt_load_one_weight(MODEL_PATH)
-    print("Model loaded successfully using ultralytics internal method!")
-    
-except Exception as e:
-    print(f"Error loading model: {e}")
-    # Fallback to direct YOLO loading with weights_only=False
-    try:
-        print("Trying fallback loading method...")
-        import torch
-        # Temporarily patch torch.load to use weights_only=False
-        original_load = torch.load
-        def patched_load(*args, **kwargs):
-            kwargs['weights_only'] = False
-            return original_load(*args, **kwargs)
-        
-        torch.load = patched_load
-        
-        # Now try loading
-        model = YOLO(MODEL_PATH)
-        print("Model loaded successfully with fallback method!")
-        
-    except Exception as fallback_error:
-        print(f"Fallback also failed: {fallback_error}")
-        if os.path.exists(MODEL_PATH):
-            file_size = os.path.getsize(MODEL_PATH)
-            print(f"Model file size: {file_size} bytes")
-        raise
 
 app = FastAPI()
 
-# CORS configuration
+# CORS configuration - Allow all origins for now
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://your-app-name.netlify.app"],
+    allow_origins=["*"],  # Allow all origins temporarily
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Load model on startup, but don't crash if it fails"""
+    global model
+    try:
+        from ultralytics import YOLO
+        print("Attempting to load model...")
+        
+        # Check if model file exists
+        if not os.path.exists(MODEL_PATH):
+            print("Model file not found, skipping model loading")
+            return
+            
+        model = YOLO(MODEL_PATH)
+        print("Model loaded successfully!")
+        
+    except Exception as e:
+        print(f"Model loading failed: {e}")
+        print("API will run without model functionality")
+        model = None
 
 @app.get("/")
 async def root():
@@ -89,6 +52,9 @@ async def get_favicon():
 @app.post("/detect/")
 async def detect_fire(file: UploadFile = File(...)):
     try:
+        if model is None:
+            return {"error": "Model not available. Please check backend logs."}, 503
+            
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
