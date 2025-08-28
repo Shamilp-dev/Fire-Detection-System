@@ -8,13 +8,14 @@ import requests
 # Global variable for model
 model = None
 MODEL_PATH = "best.pt"
+MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
 
 app = FastAPI()
 
-# CORS configuration - Allow all origins for now
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins temporarily
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,17 +23,25 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Load model on startup, but don't crash if it fails"""
+    """Load model on startup - with automatic download"""
     global model
     try:
         from ultralytics import YOLO
-        print("Attempting to load model...")
         
-        # Check if model file exists
+        # Download model if it doesn't exist
         if not os.path.exists(MODEL_PATH):
-            print("Model file not found, skipping model loading")
-            return
+            print("Downloading model from GitHub Releases...")
+            response = requests.get(MODEL_URL, stream=True)
+            response.raise_for_status()
             
+            with open(MODEL_PATH, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            print("Model downloaded successfully!")
+        
+        # Now load the model
+        print("Loading model...")
         model = YOLO(MODEL_PATH)
         print("Model loaded successfully!")
         
@@ -45,15 +54,15 @@ async def startup_event():
 async def root():
     return {"message": "Fire Detection API is running"}
 
-@app.get("/favicon.ico")
-async def get_favicon():
-    return Response(status_code=204)
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "model_loaded": model is not None}
 
 @app.post("/detect/")
 async def detect_fire(file: UploadFile = File(...)):
     try:
         if model is None:
-            return {"error": "Model not available. Please check backend logs."}, 503
+            return {"error": "Model not loaded. Check backend logs."}, 503
             
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
