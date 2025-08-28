@@ -5,6 +5,9 @@ import numpy as np
 import os
 import requests
 import torch
+import torch.serialization
+from ultralytics.nn.tasks import DetectionModel
+from torch.nn.modules.container import Sequential
 
 # Global variable for model
 model = None
@@ -16,7 +19,7 @@ app = FastAPI()
 # CORS configuration - FIXED for localhost development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3001", "https://your-frontend-domain.com"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3001", "http://localhost:3000", "https://your-frontend-domain.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,14 +47,10 @@ async def startup_event():
         # Now load the model with proper security settings
         print("Loading model...")
         
-        # FIX: Add safe globals for ultralytics models
-        import torch.serialization
-        from ultralytics.nn.tasks import DetectionModel
+        # FIX: Add ALL required safe globals for ultralytics models
+        torch.serialization.add_safe_globals([DetectionModel, Sequential])
         
-        # Allow the ultralytics classes to be loaded safely
-        torch.serialization.add_safe_globals([DetectionModel])
-        
-        # Load the model with weights_only=False (since you trust your own model)
+        # Load the model
         model = YOLO(MODEL_PATH)
         print("Model loaded successfully!")
         
