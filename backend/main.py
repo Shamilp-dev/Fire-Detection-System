@@ -1,69 +1,45 @@
 from fastapi import FastAPI, File, UploadFile, Response
 from fastapi.middleware.cors import CORSMiddleware
-from ultralytics import YOLO
 import cv2
 import numpy as np
 import os
 import requests
-import torch
 
-# Use GitHub Releases URL
-MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
+# Global variable for model
+model = None
 MODEL_PATH = "best.pt"
-
-# Download model if it doesn't exist
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model file from GitHub Releases...")
-    try:
-        response = requests.get(MODEL_URL, stream=True)
-        response.raise_for_status()
-        
-        with open(MODEL_PATH, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        print("Model downloaded successfully from GitHub!")
-        print(f"File size: {os.path.getsize(MODEL_PATH)} bytes")
-        
-    except Exception as e:
-        print(f"Error downloading model: {e}")
-        if os.path.exists(MODEL_PATH):
-            os.remove(MODEL_PATH)
-        raise
-
-# Load your trained model - SIMPLIFIED approach
-print("Loading model...")
-try:
-    # Use the standard YOLO loader but ensure compatibility
-    model = YOLO(MODEL_PATH)
-    print("Model loaded successfully!")
-    
-except Exception as e:
-    print(f"Error loading model: {e}")
-    if os.path.exists(MODEL_PATH):
-        file_size = os.path.getsize(MODEL_PATH)
-        print(f"Model file size: {file_size} bytes")
-    # Don't raise here, let the app start but without model functionality
-    model = None
 
 app = FastAPI()
 
-# CORS configuration - UPDATE WITH YOUR ACTUAL URLS
+# CORS configuration - Allow all origins for now
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001", 
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "https://fire-detection-system-backend.onrender.com",
-        "https://your-app-name.netlify.app"
-    ],
+    allow_origins=["*"],  # Allow all origins temporarily
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Load model on startup, but don't crash if it fails"""
+    global model
+    try:
+        from ultralytics import YOLO
+        print("Attempting to load model...")
+        
+        # Check if model file exists
+        if not os.path.exists(MODEL_PATH):
+            print("Model file not found, skipping model loading")
+            return
+            
+        model = YOLO(MODEL_PATH)
+        print("Model loaded successfully!")
+        
+    except Exception as e:
+        print(f"Model loading failed: {e}")
+        print("API will run without model functionality")
+        model = None
 
 @app.get("/")
 async def root():
@@ -77,7 +53,7 @@ async def get_favicon():
 async def detect_fire(file: UploadFile = File(...)):
     try:
         if model is None:
-            return {"error": "Model not loaded properly"}, 500
+            return {"error": "Model not available. Please check backend logs."}, 503
             
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
