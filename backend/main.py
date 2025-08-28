@@ -4,10 +4,6 @@ import cv2
 import numpy as np
 import os
 import requests
-import torch
-import torch.serialization
-from ultralytics.nn.tasks import DetectionModel
-from torch.nn.modules.container import Sequential
 
 # Global variable for model
 model = None
@@ -44,13 +40,8 @@ async def startup_event():
                         f.write(chunk)
             print("Model downloaded successfully!")
         
-        # Now load the model with proper security settings
+        # Now load the model (no need for complex fixes with older PyTorch)
         print("Loading model...")
-        
-        # FIX: Add ALL required safe globals for ultralytics models
-        torch.serialization.add_safe_globals([DetectionModel, Sequential])
-        
-        # Load the model
         model = YOLO(MODEL_PATH)
         print("Model loaded successfully!")
         
