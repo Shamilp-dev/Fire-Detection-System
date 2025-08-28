@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import os
 import requests
+import torch
 
 # Global variable for model
 model = None
@@ -12,10 +13,10 @@ MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/downl
 
 app = FastAPI()
 
-# CORS configuration
+# CORS configuration - FIXED for localhost development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3001", "https://your-frontend-domain.com"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,8 +41,17 @@ async def startup_event():
                         f.write(chunk)
             print("Model downloaded successfully!")
         
-        # Now load the model
+        # Now load the model with proper security settings
         print("Loading model...")
+        
+        # FIX: Add safe globals for ultralytics models
+        import torch.serialization
+        from ultralytics.nn.tasks import DetectionModel
+        
+        # Allow the ultralytics classes to be loaded safely
+        torch.serialization.add_safe_globals([DetectionModel])
+        
+        # Load the model with weights_only=False (since you trust your own model)
         model = YOLO(MODEL_PATH)
         print("Model loaded successfully!")
         
