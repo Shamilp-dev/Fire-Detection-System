@@ -5,23 +5,6 @@ import cv2
 import numpy as np
 import os
 import requests
-import torch
-from ultralytics.nn.tasks import DetectionModel
-from torch.nn.modules.container import Sequential  # Add this import
-
-# Add ALL required safe globals for PyTorch 2.6 compatibility
-torch.serialization.add_safe_globals([
-    DetectionModel,
-    Sequential,
-    # Add any other classes that might be needed
-    torch.nn.Module,
-    torch.nn.Conv2d,
-    torch.nn.BatchNorm2d,
-    torch.nn.LeakyReLU,
-    torch.nn.Upsample,
-    torch.nn.MaxPool2d,
-    torch.nn.SiLU,
-])
 
 # Use GitHub Releases URL
 MODEL_URL = "https://github.com/Shamilp-dev/Fire-Detection-System/releases/download/v1.0.0/best.pt"
@@ -49,18 +32,40 @@ if not os.path.exists(MODEL_PATH):
             os.remove(MODEL_PATH)
         raise
 
-# Load your trained model
+# Load your trained model with ultralytics native method
 print("Loading model...")
 try:
-    model = YOLO(MODEL_PATH)
-    print("Model loaded successfully!")
+    # Use ultralytics native loading which handles compatibility internally
+    from ultralytics.engine.model import attempt_load_one_weight
+    
+    # Load the model using ultralytics internal method
+    model, ckpt = attempt_load_one_weight(MODEL_PATH)
+    print("Model loaded successfully using ultralytics internal method!")
     
 except Exception as e:
     print(f"Error loading model: {e}")
-    if os.path.exists(MODEL_PATH):
-        file_size = os.path.getsize(MODEL_PATH)
-        print(f"Model file size: {file_size} bytes")
-    raise
+    # Fallback to direct YOLO loading with weights_only=False
+    try:
+        print("Trying fallback loading method...")
+        import torch
+        # Temporarily patch torch.load to use weights_only=False
+        original_load = torch.load
+        def patched_load(*args, **kwargs):
+            kwargs['weights_only'] = False
+            return original_load(*args, **kwargs)
+        
+        torch.load = patched_load
+        
+        # Now try loading
+        model = YOLO(MODEL_PATH)
+        print("Model loaded successfully with fallback method!")
+        
+    except Exception as fallback_error:
+        print(f"Fallback also failed: {fallback_error}")
+        if os.path.exists(MODEL_PATH):
+            file_size = os.path.getsize(MODEL_PATH)
+            print(f"Model file size: {file_size} bytes")
+        raise
 
 app = FastAPI()
 
