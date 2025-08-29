@@ -54,10 +54,11 @@ const HomePage = () => {
       const formData = new FormData();
       formData.append('file', blob, 'uploaded-image.jpg');
 
-      const detectionResponse = await fetch('http://localhost:8000/detect/', {
-        method: 'POST',
-        body: formData,
-      });
+      // ✅ FIXED: Correct endpoint URL
+      const detectionResponse = await fetch('https://shamilpziyad-fire-detection-backend.hf.space/detect/', {
+  method: 'POST',
+  body: formData,
+});
 
       if (!detectionResponse.ok) {
         throw new Error('Detection failed');
@@ -96,10 +97,14 @@ const HomePage = () => {
 
         {tabValue === 1 && (
           <Box>
+            {/* ✅ FIXED: Removed nested h6 tags */}
             <Typography variant="h6" gutterBottom align="center">
               Upload an Image for Fire Detection
-              <h6>Disclaimer : confidence greater than 50 - Desired Fire Output</h6>
             </Typography>
+            <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 2 }}>
+              Disclaimer: confidence greater than 50 - Desired Fire Output
+            </Typography>
+            
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <Button
                 variant="contained"
