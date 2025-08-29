@@ -147,7 +147,7 @@ const FireDetector = () => {
           }}
           style={{
             width: '100%',
-            height: 'auto',
+            height: '100%',
             borderRadius: '8px',
             border: '2px solid #ff5722'
           }}
