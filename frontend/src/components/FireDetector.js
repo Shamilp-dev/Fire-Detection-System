@@ -146,7 +146,7 @@ const FireDetector = () => {
             facingMode: "user"
           }}
           style={{
-            width: '100%',
+            width: 'auto',
             height: 'auto',
             borderRadius: '8px',
             border: '2px solid #ff5722'
