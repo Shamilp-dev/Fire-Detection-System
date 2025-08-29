@@ -6,35 +6,47 @@ const FireDetector = () => {
   const canvasRef = useRef(null);
   const [detections, setDetections] = useState([]);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [error, setError] = useState(null);
   const intervalRef = useRef(null);
 
   // Function to send a frame to the backend
   const detectFrame = async () => {
-    if (webcamRef.current) {
+    if (!webcamRef.current) return;
+
+    try {
       const imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) return;
 
-      try {
-        const res = await fetch(imageSrc);
-        const blob = await res.blob();
-        const formData = new FormData();
-        formData.append('file', blob, 'frame.jpg');
+      const res = await fetch(imageSrc);
+      const blob = await res.blob();
+      const formData = new FormData();
+      formData.append('file', blob, 'frame.jpg');
 
-        // ✅ DEPLOYMENT READY: Environment variable support
-        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-        
-        const response = await fetch(`${API_URL}/detect/`, {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const data = await response.json();
-        
-        // ✅ KEEP ORIGINAL BEHAVIOR: No pre-filtering
-        setDetections(data.detections || []);
-      } catch (error) {
-        console.error("Error calling detection API:", error);
+      // Use your actual Render backend URL
+      const API_URL = 'https://shamilpziyad-fire-detection-backend.hf.space';
+      
+      const response = await fetch(`${API_URL}/detect/`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+      
+      setDetections(data.detections || []);
+      setError(null);
+      
+    } catch (error) {
+      console.error("Error calling detection API:", error);
+      setError(error.message);
     }
   };
 
@@ -43,13 +55,15 @@ const FireDetector = () => {
     if (isDetecting) {
       setIsDetecting(false);
       clearInterval(intervalRef.current);
+      setError(null);
     } else {
       setIsDetecting(true);
-      intervalRef.current = setInterval(detectFrame, 500);
+      setError(null);
+      intervalRef.current = setInterval(detectFrame, 1000); // Slower to avoid overload
     }
   };
 
-  // ✅ Cleanup on component unmount (prevents memory leaks)
+  // Cleanup on component unmount
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -58,7 +72,7 @@ const FireDetector = () => {
     };
   }, []);
 
-  // USE EFFECT TO DRAW BOXES WHEN DETECTIONS CHANGE
+  // Draw bounding boxes
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = webcamRef.current?.video;
@@ -73,7 +87,6 @@ const FireDetector = () => {
     detections.forEach(det => {
       const [x1, y1, x2, y2] = det.bbox;
 
-      // ✅ ORIGINAL CONFIDENCE THRESHOLD: 0.5 (50%)
       if (det.confidence > 0.5) {
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 3;
@@ -108,6 +121,11 @@ const FireDetector = () => {
           audio={false}
           ref={webcamRef}
           screenshotFormat="image/jpeg"
+          videoConstraints={{
+            width: 640,
+            height: 480,
+            facingMode: "user"
+          }}
           style={{
             width: '100%',
             height: '100%',
@@ -132,18 +150,25 @@ const FireDetector = () => {
         onClick={toggleDetection}
         style={{
           padding: '12px 24px',
-          backgroundColor: isDetecting ? '#dc3545' : '#16e832ff', // ✅ Your original green
+          backgroundColor: isDetecting ? '#dc3545' : '#28a745',
           color: 'white',
           border: 'none',
           borderRadius: '6px',
           fontSize: '16px',
           fontWeight: 'bold',
           cursor: 'pointer',
-          transition: 'background-color 0.3s'
+          transition: 'background-color 0.3s',
+          minWidth: '160px'
         }}
       >
         {isDetecting ? 'Stop Detection' : 'Start Detection'}
       </button>
+
+      {error && (
+        <div style={{ color: 'red', textAlign: 'center' }}>
+          Error: {error}
+        </div>
+      )}
     </div>
   );
 };
