@@ -74,35 +74,54 @@ const FireDetector = () => {
 
   // Draw bounding boxes
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const video = webcamRef.current?.video;
-    if (!canvas || !video) return;
+  const canvas = canvasRef.current;
+  const video = webcamRef.current?.video;
+  if (!canvas || !video) return;
 
-    const ctx = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  
+  // Get actual displayed dimensions (not natural dimensions)
+  const displayedWidth = video.offsetWidth;
+  const displayedHeight = video.offsetHeight;
+  const naturalWidth = video.videoWidth;
+  const naturalHeight = video.videoHeight;
+  
+  // Calculate scale factors
+  const scaleX = displayedWidth / naturalWidth;
+  const scaleY = displayedHeight / naturalHeight;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = displayedWidth;
+  canvas.height = displayedHeight;
 
-    detections.forEach(det => {
-      const [x1, y1, x2, y2] = det.bbox;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (det.confidence > 0.5) {
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  detections.forEach(det => {
+    const [x1, y1, x2, y2] = det.bbox;
 
-        ctx.fillStyle = 'red';
-        const text = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
-        ctx.font = '16px Arial';
-        const textWidth = ctx.measureText(text).width;
-        ctx.fillRect(x1, y1 - 20, textWidth + 10, 20);
+    if (det.confidence > 0.5) {
+      // Scale coordinates to displayed size
+      const scaledX1 = x1 * scaleX;
+      const scaledY1 = y1 * scaleY;
+      const scaledX2 = x2 * scaleX;
+      const scaledY2 = y2 * scaleY;
+      const boxWidth = scaledX2 - scaledX1;
+      const boxHeight = scaledY2 - scaledY1;
 
-        ctx.fillStyle = 'white';
-        ctx.fillText(text, x1 + 5, y1 - 5);
-      }
-    });
-  }, [detections]);
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(scaledX1, scaledY1, boxWidth, boxHeight);
+
+      ctx.fillStyle = 'red';
+      const text = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
+      ctx.font = '16px Arial';
+      const textWidth = ctx.measureText(text).width;
+      ctx.fillRect(scaledX1, scaledY1 - 20, textWidth + 10, 20);
+
+      ctx.fillStyle = 'white';
+      ctx.fillText(text, scaledX1 + 5, scaledY1 - 5);
+    }
+  });
+}, [detections]);
 
   return (
     <div style={{ 
@@ -128,7 +147,7 @@ const FireDetector = () => {
           }}
           style={{
             width: '100%',
-            height: '100%',
+            height: 'auto',
             borderRadius: '8px',
             border: '2px solid #ff5722'
           }}
@@ -140,7 +159,7 @@ const FireDetector = () => {
             top: 0,
             left: 0,
             width: '100%',
-            height: '100%',
+            height: 'auto',
             pointerEvents: 'none'
           }}
         />
