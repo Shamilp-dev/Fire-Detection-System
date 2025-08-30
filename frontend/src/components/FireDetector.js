@@ -91,13 +91,15 @@ const FireDetector = () => {
   }, [isDetecting, detectFrame]);
 
   // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
+useEffect(() => {
+  const currentIntervalRef = intervalRef.current;
+  
+  return () => {
+    if (currentIntervalRef) {
+      clearInterval(currentIntervalRef);
+    }
+  };
+}, []);
 
   // Draw bounding boxes - OPTIMIZED with requestAnimationFrame
   useEffect(() => {
