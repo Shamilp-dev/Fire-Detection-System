@@ -89,12 +89,11 @@ const HomePage = () => {
         {tabValue === 0 && (
           <Box>
             <Typography variant="h6" gutterBottom align="center">
-              Real-time Fire Detection using Webcam
-          < </Typography>
-            <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 2 }}>
-              Disclaimer: Desktop browsing recommended
-            </Typography>
-            </Typography>
+  Real-time Fire Detection using Webcam
+</Typography>
+<Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 2 }}>
+  Disclaimer: Desktop browsing recommended
+</Typography>
             <FireDetector />
           </Box>
         )}
