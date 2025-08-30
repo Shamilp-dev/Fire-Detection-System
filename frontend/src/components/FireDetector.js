@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Webcam from "react-webcam";
 
 const FireDetector = () => {
@@ -8,27 +8,38 @@ const FireDetector = () => {
   const [isDetecting, setIsDetecting] = useState(false);
   const [error, setError] = useState(null);
   const intervalRef = useRef(null);
+  const requestInProgress = useRef(false);
 
-  // Function to send a frame to the backend
-  const detectFrame = async () => {
-    if (!webcamRef.current) return;
+  // Function to send a frame to the backend - OPTIMIZED
+  const detectFrame = useCallback(async () => {
+    if (!webcamRef.current || requestInProgress.current) return;
 
     try {
+      requestInProgress.current = true;
+      
       const imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) return;
 
-      const res = await fetch(imageSrc);
-      const blob = await res.blob();
+      // Convert directly without extra fetch call - OPTIMIZATION
+      const base64Data = imageSrc.split(',')[1];
+      const blob = await fetch(`data:image/jpeg;base64,${base64Data}`).then(res => res.blob());
+      
       const formData = new FormData();
       formData.append('file', blob, 'frame.jpg');
 
-      // Use your actual Render backend URL
       const API_URL = 'https://shamilpziyad-fire-detection-backend.hf.space';
+      
+      // Add AbortController for better timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       const response = await fetch(`${API_URL}/detect/`, {
         method: 'POST',
         body: formData,
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -45,23 +56,39 @@ const FireDetector = () => {
       setError(null);
       
     } catch (error) {
-      console.error("Error calling detection API:", error);
-      setError(error.message);
+      if (error.name !== 'AbortError') {
+        console.error("Error calling detection API:", error);
+        setError(error.message);
+      }
+    } finally {
+      requestInProgress.current = false;
     }
-  };
+  }, []);
 
-  // Start/Stop detection
-  const toggleDetection = () => {
+  // Start/Stop detection - OPTIMIZED
+  const toggleDetection = useCallback(() => {
     if (isDetecting) {
       setIsDetecting(false);
       clearInterval(intervalRef.current);
       setError(null);
+      setDetections([]); // Clear detections when stopping
     } else {
       setIsDetecting(true);
       setError(null);
-      intervalRef.current = setInterval(detectFrame, 1000); // Slower to avoid overload
+      // Use requestAnimationFrame for smoother intervals
+      let lastCallTime = 0;
+      const callDetectFrame = (timestamp) => {
+        if (!isDetecting) return;
+        
+        if (timestamp - lastCallTime > 1000) { // 1 second interval
+          lastCallTime = timestamp;
+          detectFrame();
+        }
+        requestAnimationFrame(callDetectFrame);
+      };
+      requestAnimationFrame(callDetectFrame);
     }
-  };
+  }, [isDetecting, detectFrame]);
 
   // Cleanup on component unmount
   useEffect(() => {
@@ -72,56 +99,68 @@ const FireDetector = () => {
     };
   }, []);
 
-  // Draw bounding boxes
+  // Draw bounding boxes - OPTIMIZED with requestAnimationFrame
   useEffect(() => {
-  const canvas = canvasRef.current;
-  const video = webcamRef.current?.video;
-  if (!canvas || !video) return;
+    let animationFrameId;
+    
+    const drawBoundingBoxes = () => {
+      const canvas = canvasRef.current;
+      const video = webcamRef.current?.video;
+      if (!canvas || !video) return;
 
-  const ctx = canvas.getContext('2d');
-  
-  // Get actual displayed dimensions (not natural dimensions)
-  const displayedWidth = video.offsetWidth;
-  const displayedHeight = video.offsetHeight;
-  const naturalWidth = video.videoWidth;
-  const naturalHeight = video.videoHeight;
-  
-  // Calculate scale factors
-  const scaleX = displayedWidth / naturalWidth;
-  const scaleY = displayedHeight / naturalHeight;
+      const ctx = canvas.getContext('2d');
+      
+      // Get actual displayed dimensions
+      const displayedWidth = video.offsetWidth;
+      const displayedHeight = video.offsetHeight;
+      const naturalWidth = video.videoWidth;
+      const naturalHeight = video.videoHeight;
+      
+      const scaleX = displayedWidth / naturalWidth;
+      const scaleY = displayedHeight / naturalHeight;
 
-  canvas.width = displayedWidth;
-  canvas.height = displayedHeight;
+      canvas.width = displayedWidth;
+      canvas.height = displayedHeight;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  detections.forEach(det => {
-    const [x1, y1, x2, y2] = det.bbox;
+      detections.forEach(det => {
+        const [x1, y1, x2, y2] = det.bbox;
 
-    if (det.confidence > 0.5) {
-      // Scale coordinates to displayed size
-      const scaledX1 = x1 * scaleX;
-      const scaledY1 = y1 * scaleY;
-      const scaledX2 = x2 * scaleX;
-      const scaledY2 = y2 * scaleY;
-      const boxWidth = scaledX2 - scaledX1;
-      const boxHeight = scaledY2 - scaledY1;
+        if (det.confidence > 0.5) {
+          const scaledX1 = x1 * scaleX;
+          const scaledY1 = y1 * scaleY;
+          const scaledX2 = x2 * scaleX;
+          const scaledY2 = y2 * scaleY;
+          const boxWidth = scaledX2 - scaledX1;
+          const boxHeight = scaledY2 - scaledY1;
 
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(scaledX1, scaledY1, boxWidth, boxHeight);
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(scaledX1, scaledY1, boxWidth, boxHeight);
 
-      ctx.fillStyle = 'red';
-      const text = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
-      ctx.font = '16px Arial';
-      const textWidth = ctx.measureText(text).width;
-      ctx.fillRect(scaledX1, scaledY1 - 20, textWidth + 10, 20);
+          ctx.fillStyle = 'red';
+          const text = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
+          ctx.font = '16px Arial';
+          const textWidth = ctx.measureText(text).width;
+          ctx.fillRect(scaledX1, scaledY1 - 20, textWidth + 10, 20);
 
-      ctx.fillStyle = 'white';
-      ctx.fillText(text, scaledX1 + 5, scaledY1 - 5);
-    }
-  });
-}, [detections]);
+          ctx.fillStyle = 'white';
+          ctx.fillText(text, scaledX1 + 5, scaledY1 - 5);
+        }
+      });
+      
+      animationFrameId = requestAnimationFrame(drawBoundingBoxes);
+    };
+
+    drawBoundingBoxes();
+    
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [detections]);
 
   return (
     <div style={{ 
@@ -133,8 +172,9 @@ const FireDetector = () => {
     }}>
       <div style={{ 
         position: 'relative',
-        width: '640px',
-        height: '480px'
+        width: '100%',
+        maxWidth: '640px',
+        height: 'auto'
       }}>
         <Webcam
           audio={false}
@@ -147,7 +187,7 @@ const FireDetector = () => {
           }}
           style={{
             width: '100%',
-            height: '100%',
+            height: 'auto',
             borderRadius: '8px',
             border: '2px solid #ff5722'
           }}
@@ -159,7 +199,7 @@ const FireDetector = () => {
             top: 0,
             left: 0,
             width: '100%',
-            height: 'auto',
+            height: '100%',
             pointerEvents: 'none'
           }}
         />
