@@ -8,9 +8,11 @@ import {
   Tabs,
   Tab,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Card,
+  CardContent
 } from '@mui/material';
-import { CameraAlt, CloudUpload } from '@mui/icons-material';
+import { CameraAlt, CloudUpload, Whatshot } from '@mui/icons-material';
 import FireDetector from './FireDetector';
 
 const HomePage = () => {
@@ -20,7 +22,6 @@ const HomePage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ OPTIMIZATION 1: Use environment variable
   const API_URL = process.env.REACT_APP_API_URL || 'https://shamilpziyad-fire-detection-backend.hf.space';
 
   const handleTabChange = (event, newValue) => {
@@ -30,18 +31,15 @@ const HomePage = () => {
     setError(null);
   };
 
-  // ✅ OPTIMIZATION 2: Memoized image upload handler
   const handleImageUpload = useCallback((event) => {
     const file = event.target.files[0];
     if (file) {
-      // ✅ OPTIMIZATION 3: File size validation
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      const maxSize = 10 * 1024 * 1024;
       if (file.size > maxSize) {
         setError('Image too large. Maximum size: 10MB');
         return;
       }
 
-      // ✅ OPTIMIZATION 4: File type validation
       if (!file.type.startsWith('image/')) {
         setError('Please select a valid image file (JPG, PNG, JPEG)');
         return;
@@ -60,7 +58,6 @@ const HomePage = () => {
     }
   }, []);
 
-  // ✅ OPTIMIZATION 5: Memoized detection handler with timeout
   const detectUploadedImage = useCallback(async () => {
     if (!selectedImage) return;
 
@@ -68,16 +65,14 @@ const HomePage = () => {
     setError(null);
 
     try {
-      // Convert base64 to blob
       const response = await fetch(selectedImage);
       const blob = await response.blob();
       
       const formData = new FormData();
       formData.append('file', blob, 'uploaded-image.jpg');
 
-      // ✅ OPTIMIZATION 6: Add request timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const detectionResponse = await fetch(`${API_URL}/detect/`, {
         method: 'POST',
@@ -106,128 +101,298 @@ const HomePage = () => {
   }, [selectedImage, API_URL]);
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4, minHeight: '80vh' }}>
-      <Typography 
-        variant="h3" 
-        component="h1" 
-        gutterBottom 
-        align="center" 
-        sx={{ fontWeight: 'bold', mb: 2 }}
-      >
-        🔥 Fire Detection System
-      </Typography>
+    <Box sx={{ 
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      py: 6
+    }}>
+      <Container maxWidth="lg">
+        {/* Header */}
+        <Box sx={{ textAlign: 'center', mb: 5 }}>
+          <Whatshot sx={{ fontSize: 80, color: '#ff6b35', mb: 2 }} />
+          <Typography 
+            variant="h2" 
+            component="h1"
+            sx={{ 
+              fontWeight: 800,
+              color: 'white',
+              mb: 1,
+              textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+              fontSize: { xs: '2.5rem', md: '3.5rem' }
+            }}
+          >
+            Fire Detection System
+          </Typography>
+          <Typography 
+            variant="h6"
+            sx={{ 
+              color: 'rgba(255,255,255,0.9)',
+              fontWeight: 400,
+              mb: 1
+            }}
+          >
+            AI-Powered Real-Time Fire Detection
+          </Typography>
+        </Box>
 
-      {/* ✅ OPTIMIZATION 7: Info banner */}
-      <Alert severity="info" sx={{ mb: 3 }}>
-        <strong>Optimized:</strong> Detection is now 2-3x faster with improved performance! 🚀
-      </Alert>
+        {/* Main Content Card */}
+        <Card sx={{ 
+          borderRadius: 4,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          overflow: 'hidden'
+        }}>
+          <Box sx={{ 
+            background: 'linear-gradient(90deg, #ff6b35 0%, #f7931e 100%)',
+            p: 0.5
+          }} />
+          
+          <CardContent sx={{ p: 4 }}>
+            {/* Tabs */}
+            <Tabs 
+              value={tabValue} 
+              onChange={handleTabChange} 
+              centered
+              sx={{ 
+                mb: 4,
+                '& .MuiTab-root': {
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  minHeight: 60
+                },
+                '& .Mui-selected': {
+                  color: '#ff6b35'
+                }
+              }}
+            >
+              <Tab 
+                icon={<CameraAlt sx={{ fontSize: 28 }} />} 
+                label="Live Webcam" 
+                iconPosition="start"
+              />
+              <Tab 
+                icon={<CloudUpload sx={{ fontSize: 28 }} />} 
+                label="Upload Image" 
+                iconPosition="start"
+              />
+            </Tabs>
 
-      <Paper elevation={3} sx={{ p: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange} centered sx={{ mb: 3 }}>
-          <Tab icon={<CameraAlt />} label="Webcam Detection" />
-          <Tab icon={<CloudUpload />} label="Upload Image" />
-        </Tabs>
+            {/* Webcam Tab */}
+            {tabValue === 0 && (
+              <Box>
+                <Typography 
+                  variant="h5" 
+                  gutterBottom 
+                  align="center"
+                  sx={{ fontWeight: 600, mb: 3, color: '#333' }}
+                >
+                  Real-time Detection
+                </Typography>
+                <FireDetector />
+              </Box>
+            )}
 
-        {tabValue === 0 && (
-          <Box>
-            <Typography variant="h6" gutterBottom align="center">
-              Real-time Fire Detection using Webcam
-            </Typography>
-            <FireDetector />
-          </Box>
-        )}
-
-        {tabValue === 1 && (
-          <Box>
-            <Typography variant="h6" gutterBottom align="center">
-              Upload an Image for Fire Detection
-            </Typography>
-            <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 2 }}>
-              Supported formats: JPG, PNG, JPEG • Max size: 10MB • Confidence threshold: 50%
-            </Typography>
-            
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <Button
-                variant="contained"
-                component="label"
-                startIcon={<CloudUpload />}
-                sx={{ mb: 2 }}
-              >
-                Upload Image
-                <input
-                  type="file"
-                  hidden
-                  accept="image/jpeg,image/jpg,image/png"
-                  onChange={handleImageUpload}
-                />
-              </Button>
-
-              {error && (
-                <Alert severity="error" sx={{ width: '100%', maxWidth: '600px' }}>
-                  {error}
-                </Alert>
-              )}
-
-              {selectedImage && (
-                <Box sx={{ textAlign: 'center', width: '100%', maxWidth: '600px' }}>
-                  <img
-                    src={selectedImage}
-                    alt="Uploaded"
-                    style={{ 
-                      maxWidth: '100%', 
-                      maxHeight: '400px', 
-                      border: '2px solid #ff5722', 
-                      borderRadius: '8px',
-                      marginBottom: '20px',
-                      objectFit: 'contain'
-                    }}
-                  />
+            {/* Upload Tab */}
+            {tabValue === 1 && (
+              <Box>
+                <Typography 
+                  variant="h5" 
+                  gutterBottom 
+                  align="center"
+                  sx={{ fontWeight: 600, mb: 2, color: '#333' }}
+                >
+                  Upload & Detect
+                </Typography>
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary" 
+                  align="center" 
+                  sx={{ mb: 4 }}
+                >
+                  Support JPG, PNG, JPEG • Max 10MB
+                </Typography>
+                
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  gap: 3 
+                }}>
+                  {/* Upload Button */}
                   <Button
                     variant="contained"
-                    fullWidth
-                    onClick={detectUploadedImage}
-                    disabled={loading}
-                    startIcon={loading ? <CircularProgress size={20} color="inherit" /> : null}
-                    sx={{
+                    component="label"
+                    startIcon={<CloudUpload />}
+                    sx={{ 
                       py: 1.5,
-                      fontSize: '16px',
-                      fontWeight: 'bold'
+                      px: 4,
+                      fontSize: '1.1rem',
+                      fontWeight: 600,
+                      borderRadius: 3,
+                      background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
+                      textTransform: 'none',
+                      boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 6px 20px rgba(102, 126, 234, 0.6)'
+                      },
+                      transition: 'all 0.3s ease'
                     }}
                   >
-                    {loading ? 'Detecting Fire...' : '🔍 Detect Fire'}
+                    Choose Image
+                    <input
+                      type="file"
+                      hidden
+                      accept="image/jpeg,image/jpg,image/png"
+                      onChange={handleImageUpload}
+                    />
                   </Button>
-                </Box>
-              )}
 
-              {uploadDetections && (
-                <Box sx={{ mt: 3, width: '100%', maxWidth: '600px' }}>
-                  <Typography variant="h6" gutterBottom>
-                    Detection Results:
-                  </Typography>
-                  {uploadDetections.length === 0 ? (
-                    <Alert severity="success">
-                      ✅ No fire detected in this image.
+                  {/* Error Alert */}
+                  {error && (
+                    <Alert 
+                      severity="error" 
+                      sx={{ 
+                        width: '100%', 
+                        maxWidth: '600px',
+                        borderRadius: 2,
+                        fontSize: '0.95rem'
+                      }}
+                    >
+                      {error}
                     </Alert>
-                  ) : (
-                    <>
-                      <Alert severity="warning" sx={{ mb: 2 }}>
-                        <strong>⚠️ {uploadDetections.length} detection(s) found!</strong>
-                      </Alert>
-                      {uploadDetections.map((det, index) => (
-                        <Alert key={index} severity="error" sx={{ mb: 1 }}>
-                          <strong>{det.label}</strong> detected with{' '}
-                          <strong>{(det.confidence * 100).toFixed(1)}%</strong> confidence
+                  )}
+
+                  {/* Image Preview & Detection */}
+                  {selectedImage && (
+                    <Paper 
+                      elevation={3}
+                      sx={{ 
+                        p: 3, 
+                        width: '100%', 
+                        maxWidth: '700px',
+                        borderRadius: 3
+                      }}
+                    >
+                      <img
+                        src={selectedImage}
+                        alt="Uploaded"
+                        style={{ 
+                          width: '100%',
+                          maxHeight: '500px',
+                          borderRadius: '12px',
+                          border: '3px solid #ff6b35',
+                          objectFit: 'contain',
+                          marginBottom: '20px',
+                          display: 'block'
+                        }}
+                      />
+                      <Button
+                        variant="contained"
+                        fullWidth
+                        onClick={detectUploadedImage}
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <Whatshot />}
+                        sx={{
+                          py: 2,
+                          fontSize: '1.1rem',
+                          fontWeight: 600,
+                          borderRadius: 2,
+                          background: loading 
+                            ? '#ccc' 
+                            : 'linear-gradient(90deg, #ff6b35 0%, #f7931e 100%)',
+                          textTransform: 'none',
+                          boxShadow: '0 4px 15px rgba(255, 107, 53, 0.4)',
+                          '&:hover': {
+                            background: 'linear-gradient(90deg, #f7931e 0%, #ff6b35 100%)',
+                            boxShadow: '0 6px 20px rgba(255, 107, 53, 0.6)'
+                          }
+                        }}
+                      >
+                        {loading ? 'Analyzing...' : 'Detect Fire'}
+                      </Button>
+                    </Paper>
+                  )}
+
+                  {/* Detection Results */}
+                  {uploadDetections && (
+                    <Paper 
+                      elevation={3}
+                      sx={{ 
+                        p: 3, 
+                        width: '100%', 
+                        maxWidth: '700px',
+                        borderRadius: 3
+                      }}
+                    >
+                      <Typography 
+                        variant="h6" 
+                        gutterBottom
+                        sx={{ fontWeight: 600, mb: 2 }}
+                      >
+                        Detection Results
+                      </Typography>
+                      {uploadDetections.length === 0 ? (
+                        <Alert 
+                          severity="success"
+                          sx={{ 
+                            borderRadius: 2,
+                            fontSize: '1rem',
+                            fontWeight: 500
+                          }}
+                        >
+                          ✅ No fire detected - Image is safe!
                         </Alert>
-                      ))}
-                    </>
+                      ) : (
+                        <Box>
+                          <Alert 
+                            severity="warning" 
+                            sx={{ 
+                              mb: 2,
+                              borderRadius: 2,
+                              fontSize: '1rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            🔥 {uploadDetections.length} fire detection(s) found!
+                          </Alert>
+                          {uploadDetections.map((det, index) => (
+                            <Alert 
+                              key={index} 
+                              severity="error" 
+                              sx={{ 
+                                mb: 1.5,
+                                borderRadius: 2,
+                                fontSize: '0.95rem'
+                              }}
+                            >
+                              <strong>{det.label.toUpperCase()}</strong> detected with{' '}
+                              <strong>{(det.confidence * 100).toFixed(1)}%</strong> confidence
+                            </Alert>
+                          ))}
+                        </Box>
+                      )}
+                    </Paper>
                   )}
                 </Box>
-              )}
-            </Box>
-          </Box>
-        )}
-      </Paper>
-    </Container>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Footer */}
+        <Typography 
+          align="center" 
+          sx={{ 
+            mt: 4, 
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: '0.9rem'
+          }}
+        >
+          Powered by YOLOv8 • Built with React & FastAPI
+        </Typography>
+      </Container>
+    </Box>
   );
 };
 
