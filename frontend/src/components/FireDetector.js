@@ -10,52 +10,41 @@ const FireDetector = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [fps, setFps] = useState(0);
   const [webcamReady, setWebcamReady] = useState(false);
+  const [captureSize, setCaptureSize] = useState({ width: 480, height: 360 }); // Track capture dimensions
   const intervalRef = useRef(null);
   const frameCountRef = useRef(0);
   const lastTimeRef = useRef(Date.now());
 
   const API_URL = process.env.REACT_APP_API_URL || 'https://shamilpziyad-fire-detection-backend.hf.space';
 
-  // Enhanced detection function
   const detectFrame = useCallback(async () => {
     if (isProcessing || !webcamReady) return;
     
-    if (!webcamRef.current || !webcamRef.current.video) {
-      console.log("Webcam not available");
-      return;
-    }
+    if (!webcamRef.current || !webcamRef.current.video) return;
 
     const video = webcamRef.current.video;
-    if (video.readyState !== 4 || !video.videoWidth || !video.videoHeight) {
-      console.log("Video not ready:", {
-        readyState: video.readyState,
-        width: video.videoWidth,
-        height: video.videoHeight
-      });
-      return;
-    }
+    if (video.readyState !== 4 || !video.videoWidth || !video.videoHeight) return;
 
     setIsProcessing(true);
 
     try {
-      let imageSrc;
-      try {
-        imageSrc = webcamRef.current.getScreenshot({
-          width: 480,
-          height: 360,
-          quality: 0.7
-        });
-      } catch (screenshotError) {
-        console.error("Screenshot error:", screenshotError);
+      // ✅ FIX 1: Capture at reduced resolution
+      const captureWidth = 480;
+      const captureHeight = 360;
+      
+      const imageSrc = webcamRef.current.getScreenshot({
+        width: captureWidth,
+        height: captureHeight,
+        quality: 0.7
+      });
+
+      if (!imageSrc) {
         setIsProcessing(false);
         return;
       }
 
-      if (!imageSrc) {
-        console.log("No image captured");
-        setIsProcessing(false);
-        return;
-      }
+      // Store capture size for coordinate scaling
+      setCaptureSize({ width: captureWidth, height: captureHeight });
 
       const res = await fetch(imageSrc);
       const blob = await res.blob();
@@ -63,7 +52,7 @@ const FireDetector = () => {
       formData.append('file', blob, 'frame.jpg');
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // Reduced timeout
 
       const response = await fetch(`${API_URL}/detect/`, {
         method: 'POST',
@@ -73,18 +62,10 @@ const FireDetector = () => {
 
       clearTimeout(timeoutId);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const data = await response.json();
-      
-      if (data.error) {
-        setError(data.error);
-        setIsProcessing(false);
-        return;
-      }
-      
+      console.log('Detection response:', data); // Debug log
       setDetections(data.detections || []);
       setError(null);
       
@@ -97,13 +78,8 @@ const FireDetector = () => {
       }
       
     } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error("Request timeout");
-        setError("Request timeout. Backend is slow.");
-      } else {
-        console.error("Detection error:", error);
-        setError(error.message);
-      }
+      console.error("Detection error:", error);
+      setError(error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -116,89 +92,96 @@ const FireDetector = () => {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      setError(null);
       setFps(0);
       frameCountRef.current = 0;
+      setDetections([]); // Clear detections
     } else {
       if (!webcamReady) {
-        setError("Webcam not ready. Please wait or refresh the page.");
+        setError("Webcam not ready");
         return;
       }
-      
       setIsDetecting(true);
       setError(null);
-      intervalRef.current = setInterval(detectFrame, 500); // 2 FPS
+      // ✅ FIX 2: Trigger detection immediately, then every 500ms
+      detectFrame();
+      intervalRef.current = setInterval(detectFrame, 500);
     }
   };
 
   useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
-  // Draw detections on canvas
+  // ✅ FIX 3: Correct coordinate scaling
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = webcamRef.current?.video;
     
-    if (!canvas || !video || !video.videoWidth || !video.videoHeight) {
-      return;
-    }
+    if (!canvas || !video || !video.videoWidth || !video.videoHeight) return;
 
-    const ctx = canvas.getContext('2d', { alpha: true }); // Enable alpha for transparent canvas
+    const ctx = canvas.getContext('2d');
     
-    const displayedWidth = video.offsetWidth;
-    const displayedHeight = video.offsetHeight;
-    const naturalWidth = video.videoWidth;
-    const naturalHeight = video.videoHeight;
+    // Display dimensions (what user sees)
+    const displayWidth = video.offsetWidth;
+    const displayHeight = video.offsetHeight;
     
-    const scaleX = displayedWidth / naturalWidth;
-    const scaleY = displayedHeight / naturalHeight;
+    // Capture dimensions (what was sent to API)
+    const { width: captureWidth, height: captureHeight } = captureSize;
+    
+    // ✅ CRITICAL: Scale from capture size to display size
+    const scaleX = displayWidth / captureWidth;
+    const scaleY = displayHeight / captureHeight;
+    
+    console.log('Scaling:', { 
+      displayWidth, 
+      displayHeight, 
+      captureWidth, 
+      captureHeight, 
+      scaleX, 
+      scaleY 
+    });
 
-    canvas.width = displayedWidth;
-    canvas.height = displayedHeight;
-
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     detections.forEach(det => {
       if (det.confidence < 0.5) return;
 
       const [x1, y1, x2, y2] = det.bbox;
-
+      
+      console.log('Original bbox:', det.bbox);
+      
+      // Scale coordinates from capture size to display size
       const scaledX1 = x1 * scaleX;
       const scaledY1 = y1 * scaleY;
       const scaledX2 = x2 * scaleX;
       const scaledY2 = y2 * scaleY;
       const boxWidth = scaledX2 - scaledX1;
       const boxHeight = scaledY2 - scaledY1;
+      
+      console.log('Scaled bbox:', { scaledX1, scaledY1, scaledX2, scaledY2 });
 
+      // Draw bounding box
       ctx.strokeStyle = det.label === 'fire' ? '#ff0000' : '#ff6600';
       ctx.lineWidth = 3;
       ctx.strokeRect(scaledX1, scaledY1, boxWidth, boxHeight);
-
+      
+      // Draw label
       ctx.fillStyle = ctx.strokeStyle;
       const text = `${det.label} ${(det.confidence * 100).toFixed(0)}%`;
       ctx.font = 'bold 16px Arial';
       const textWidth = ctx.measureText(text).width;
       ctx.fillRect(scaledX1, scaledY1 - 25, textWidth + 10, 25);
-
       ctx.fillStyle = 'white';
       ctx.fillText(text, scaledX1 + 5, scaledY1 - 7);
     });
-  }, [detections]);
+  }, [detections, captureSize]);
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center',
-      gap: '20px',
-      marginTop: '20px'
-    }}>
-      {/* Status indicator */}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', marginTop: '20px' }}>
       <div style={{
         padding: '8px 16px',
         borderRadius: '4px',
@@ -212,75 +195,62 @@ const FireDetector = () => {
         {webcamReady && isDetecting && `🟢 Live Detection (${fps} FPS)`}
       </div>
 
-      <div style={{ 
-        position: 'relative',
-        width: '640px',
-        maxWidth: '100%',
-        aspectRatio: '4/3',
-        backgroundColor: '#000',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        border: '2px solid #ff5722'
-      }}>
-        {/* Webcam component */}
+      <div style={{ position: 'relative', width: '640px', maxWidth: '100%', aspectRatio: '4/3', backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden', border: '2px solid #ff5722' }}>
         <Webcam
           audio={false}
           ref={webcamRef}
           screenshotFormat="image/jpeg"
           screenshotQuality={0.7}
-          videoConstraints={{
-            width: 640,
-            height: 480,
-            facingMode: "user"
+          videoConstraints={{ 
+            width: 640, 
+            height: 480, 
+            facingMode: "user" 
           }}
           onUserMedia={() => {
-            console.log("Webcam stream started");
+            console.log("✅ Webcam ready");
             setWebcamReady(true);
-            setError(null);
           }}
           onUserMediaError={(err) => {
-            console.error("Webcam error:", err);
-            setError("Camera access denied or unavailable");
+            console.error("❌ Webcam error:", err);
+            setError("Camera access denied");
             setWebcamReady(false);
           }}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            zIndex: 1
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            width: '100%', 
+            height: '100%', 
+            objectFit: 'cover', 
+            zIndex: 1 
           }}
         />
         
-        {/* Canvas overlay */}
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: 2
-          }}
+        <canvas 
+          ref={canvasRef} 
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            width: '100%', 
+            height: '100%', 
+            pointerEvents: 'none', 
+            zIndex: 2 
+          }} 
         />
         
-        {/* Processing indicator */}
         {isProcessing && (
-          <div style={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            backgroundColor: 'rgba(255, 87, 34, 0.9)',
-            color: 'white',
-            padding: '8px 12px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            zIndex: 3
+          <div style={{ 
+            position: 'absolute', 
+            top: 10, 
+            right: 10, 
+            backgroundColor: 'rgba(255, 87, 34, 0.9)', 
+            color: 'white', 
+            padding: '8px 12px', 
+            borderRadius: '4px', 
+            fontSize: '12px', 
+            fontWeight: 'bold', 
+            zIndex: 3 
           }}>
             🔄 Processing...
           </div>
@@ -288,8 +258,8 @@ const FireDetector = () => {
       </div>
       
       <button 
-        onClick={toggleDetection}
-        disabled={!webcamReady}
+        onClick={toggleDetection} 
+        disabled={!webcamReady} 
         style={{
           padding: '12px 24px',
           backgroundColor: !webcamReady ? '#9e9e9e' : (isDetecting ? '#dc3545' : '#28a745'),
@@ -299,66 +269,67 @@ const FireDetector = () => {
           fontSize: '16px',
           fontWeight: 'bold',
           cursor: webcamReady ? 'pointer' : 'not-allowed',
-          transition: 'background-color 0.3s',
           minWidth: '160px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
           opacity: webcamReady ? 1 : 0.6
         }}
-        onMouseEnter={(e) => {
-          if (webcamReady) e.target.style.opacity = '0.9';
-        }}
-        onMouseLeave={(e) => {
-          if (webcamReady) e.target.style.opacity = '1';
-        }}
       >
-        {!webcamReady && '⏳ Loading Camera...'}
-        {webcamReady && (isDetecting ? '⏸ Stop Detection' : '▶ Start Detection')}
+        {!webcamReady && '⏳ Loading...'}
+        {webcamReady && (isDetecting ? '⏸ Stop' : '▶ Start')}
       </button>
 
-      {/* Error display */}
       {error && (
         <div style={{ 
-          color: 'white',
-          backgroundColor: '#d32f2f',
-          padding: '12px 20px',
-          borderRadius: '6px',
-          textAlign: 'center',
-          maxWidth: '600px',
-          fontSize: '14px'
+          color: 'white', 
+          backgroundColor: '#d32f2f', 
+          padding: '12px 20px', 
+          borderRadius: '6px', 
+          fontSize: '14px' 
         }}>
-          ⚠️ Error: {error}
+          ⚠️ {error}
         </div>
       )}
 
-      {/* Detection info */}
       {detections.length > 0 && (
-        <div style={{
-          backgroundColor: '#fff3e0',
-          border: '2px solid #ff6f00',
-          borderRadius: '8px',
-          padding: '16px',
-          maxWidth: '600px',
-          width: '100%'
+        <div style={{ 
+          backgroundColor: '#fff3e0', 
+          border: '2px solid #ff6f00', 
+          borderRadius: '8px', 
+          padding: '16px', 
+          maxWidth: '600px', 
+          width: '100%' 
         }}>
           <div style={{ 
-            color: '#e65100',
-            fontWeight: 'bold',
-            marginBottom: '8px',
-            fontSize: '16px'
+            color: '#e65100', 
+            fontWeight: 'bold', 
+            marginBottom: '8px', 
+            fontSize: '16px' 
           }}>
             🔥 {detections.length} Detection(s) Found!
           </div>
-          <ul style={{ 
-            margin: 0,
-            paddingLeft: '20px',
-            color: '#bf360c'
-          }}>
+          <ul style={{ margin: 0, paddingLeft: '20px', color: '#bf360c' }}>
             {detections.map((det, i) => (
-              <li key={i} style={{ marginBottom: '4px' }}>
+              <li key={i}>
                 <strong>{det.label}</strong> - {(det.confidence * 100).toFixed(1)}% confidence
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      
+      {/* Debug info */}
+      {process.env.NODE_ENV === 'development' && detections.length > 0 && (
+        <div style={{ 
+          fontSize: '12px', 
+          color: '#666', 
+          fontFamily: 'monospace',
+          backgroundColor: '#f5f5f5',
+          padding: '8px',
+          borderRadius: '4px',
+          maxWidth: '600px',
+          width: '100%'
+        }}>
+          Debug: Capture {captureSize.width}x{captureSize.height} 
+          | Display {webcamRef.current?.video?.offsetWidth}x{webcamRef.current?.video?.offsetHeight}
         </div>
       )}
     </div>
