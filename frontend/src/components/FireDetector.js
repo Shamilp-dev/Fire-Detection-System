@@ -13,38 +13,59 @@ const FireDetector = () => {
   const frameCountRef = useRef(0);
   const lastTimeRef = useRef(Date.now());
 
-  // ✅ OPTIMIZATION 1: Use environment variable for API URL
   const API_URL = process.env.REACT_APP_API_URL || 'https://shamilpziyad-fire-detection-backend.hf.space';
 
-  // ✅ OPTIMIZATION 2: Memoized detection function to prevent recreations
+  // ✅ FIX: Enhanced detection function with better error handling
   const detectFrame = useCallback(async () => {
-    // ✅ OPTIMIZATION 3: Prevent overlapping requests
-    if (isProcessing || !webcamRef.current) return;
+    // Prevent overlapping requests
+    if (isProcessing) return;
+    
+    // ✅ FIX 1: Check if webcam is ready and has video
+    if (!webcamRef.current || !webcamRef.current.video || webcamRef.current.video.readyState !== 4) {
+      console.log("Webcam not ready, skipping frame");
+      return;
+    }
 
     setIsProcessing(true);
 
     try {
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (!imageSrc) {
+      // ✅ FIX 2: Check video dimensions before capture
+      const video = webcamRef.current.video;
+      if (!video.videoWidth || !video.videoHeight) {
+        console.log("Video dimensions not available");
         setIsProcessing(false);
         return;
       }
 
-      // ✅ OPTIMIZATION 4: Use lower quality JPEG for faster upload
-      const imageSrcOptimized = webcamRef.current.getScreenshot({
-        width: 480,  // Reduced from 640
-        height: 360, // Reduced from 480
-        quality: 0.7 // 70% JPEG quality
-      });
+      // ✅ FIX 3: Capture screenshot with fallback
+      let imageSrc;
+      try {
+        imageSrc = webcamRef.current.getScreenshot({
+          width: 480,
+          height: 360,
+          quality: 0.7
+        });
+      } catch (screenshotError) {
+        console.error("Screenshot error:", screenshotError);
+        setIsProcessing(false);
+        return;
+      }
 
-      const res = await fetch(imageSrcOptimized || imageSrc);
+      if (!imageSrc) {
+        console.log("No image captured, skipping");
+        setIsProcessing(false);
+        return;
+      }
+
+      // Convert base64 to blob
+      const res = await fetch(imageSrc);
       const blob = await res.blob();
       const formData = new FormData();
       formData.append('file', blob, 'frame.jpg');
 
-      // ✅ OPTIMIZATION 5: Add timeout to prevent hanging requests
+      // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(`${API_URL}/detect/`, {
         method: 'POST',
@@ -62,13 +83,14 @@ const FireDetector = () => {
       
       if (data.error) {
         setError(data.error);
+        setIsProcessing(false);
         return;
       }
       
       setDetections(data.detections || []);
       setError(null);
       
-      // ✅ OPTIMIZATION 6: Calculate FPS
+      // Calculate FPS
       frameCountRef.current++;
       const now = Date.now();
       if (now - lastTimeRef.current >= 1000) {
@@ -102,10 +124,16 @@ const FireDetector = () => {
       setFps(0);
       frameCountRef.current = 0;
     } else {
+      // ✅ FIX 4: Check webcam before starting
+      if (!webcamRef.current || !webcamRef.current.video) {
+        setError("Webcam not initialized. Please refresh the page.");
+        return;
+      }
+      
       setIsDetecting(true);
       setError(null);
-      // ✅ OPTIMIZATION 7: Slower interval for weak backends (1.5 seconds)
-      intervalRef.current = setInterval(detectFrame, 1500);
+      // 2 FPS (500ms interval) - faster than before
+      intervalRef.current = setInterval(detectFrame, 500);
     }
   };
 
@@ -118,19 +146,22 @@ const FireDetector = () => {
     };
   }, []);
 
-  // ✅ OPTIMIZATION 8: Memoized drawing function
+  // ✅ FIX 5: Enhanced drawing with better error handling
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = webcamRef.current?.video;
-    if (!canvas || !video) return;
+    
+    if (!canvas || !video || !video.videoWidth || !video.videoHeight) {
+      return;
+    }
 
-    const ctx = canvas.getContext('2d', { alpha: false }); // Disable alpha for performance
+    const ctx = canvas.getContext('2d', { alpha: false });
     
     // Use video dimensions
     const displayedWidth = video.offsetWidth;
     const displayedHeight = video.offsetHeight;
-    const naturalWidth = video.videoWidth || 640;
-    const naturalHeight = video.videoHeight || 480;
+    const naturalWidth = video.videoWidth;
+    const naturalHeight = video.videoHeight;
     
     // Calculate scale factors
     const scaleX = displayedWidth / naturalWidth;
@@ -141,9 +172,9 @@ const FireDetector = () => {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // ✅ OPTIMIZATION 9: Only draw high-confidence detections
+    // Draw detections
     detections.forEach(det => {
-      if (det.confidence < 0.5) return; // Skip low confidence
+      if (det.confidence < 0.5) return;
 
       const [x1, y1, x2, y2] = det.bbox;
 
@@ -181,7 +212,7 @@ const FireDetector = () => {
       gap: '20px',
       marginTop: '20px'
     }}>
-      {/* ✅ OPTIMIZATION 10: Show connection status */}
+      {/* Connection status */}
       <div style={{
         padding: '8px 16px',
         borderRadius: '4px',
@@ -214,6 +245,10 @@ const FireDetector = () => {
             height: 'auto',
             borderRadius: '8px',
             border: '2px solid #ff5722'
+          }}
+          onUserMediaError={(err) => {
+            console.error("Webcam error:", err);
+            setError("Camera access denied or unavailable");
           }}
         />
         <canvas
